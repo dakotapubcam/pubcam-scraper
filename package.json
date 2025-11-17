@@ -1,0 +1,11 @@
+{
+  "name": "pubcam-scraper",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node main.js"
+  },
+  "dependencies": {
+    "apify": "^3.0.0"
+  }
+}
