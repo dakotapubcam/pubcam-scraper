@@ -80,4 +80,73 @@ Actor.main(async () => {
       const venue = findVenueById(venueId);
 
       if (!venue) {
-        log.warning(`No venue config found for venueId="${venueId}" (url: ${
+        log.warning(`No venue config found for venueId="${venueId}" (url: ${request.url})`);
+        return;
+      }
+
+      if (!label || label === 'LIST') {
+        // LIST PAGE: get detail URLs from venue.listPage
+        if (typeof venue.listPage !== 'function') {
+          log.warning(`Venue "${venueId}" missing listPage()`);
+          return;
+        }
+
+        const next = await venue.listPage($, request) || [];
+
+        for (const item of next) {
+          if (!item?.url) continue;
+
+          await requestQueue.addRequest({
+            url: item.url,
+            userData: {
+              label: item.label || 'DETAIL',
+              venueId,
+              source,
+            },
+          });
+        }
+
+        log.info(`LIST processed for ${venueId}, queued ${next.length} detail URLs`);
+        return;
+      }
+
+      // DETAIL PAGE
+      if (label === 'DETAIL') {
+        if (typeof venue.detailPage !== 'function') {
+          log.warning(`Venue "${venueId}" missing detailPage()`);
+          return;
+        }
+
+        const detail = await venue.detailPage($, request) || {};
+        const {
+          name = '',
+          description = '',
+          startDateTime = '',
+          endDateTime = '',
+          imageUrl = '',
+          ticketUrl = '',
+          priceRange = '',
+        } = detail;
+
+        // For now, we just push to the default dataset.
+        // Later, this is where you POST to the Cloud Run intake.
+        await Actor.pushData({
+          venueId,
+          source,
+          name,
+          description,
+          startDateTime,
+          endDateTime,
+          imageUrl,
+          ticketUrl,
+          priceRange,
+          scrapedUrl: request.url,
+        });
+
+        log.info(`DETAIL saved for ${venueId}: ${name || '(no title)'}`);
+      }
+    },
+  });
+
+  await crawler.run();
+});
