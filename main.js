@@ -14,8 +14,10 @@ import laLaLas from './venues/laLaLas.js';
 import uniBar from './venues/uniBar.js';
 import halfwayHotel from './venues/halfwayHotel.js';
 import barCabron from './venues/barCabron.js';
-// import grandHotel from './venues/grandHotel.js';
+// import grandHotel from './venues/grandHotel.js'; // Moshtix – handled later
 
+const INTAKE_URL =
+  'https://pubcam-intake-805112904135.australia-southeast1.run.app/intake';
 
 // All venue configs in one place
 const ALL_VENUES = [
@@ -30,9 +32,8 @@ const ALL_VENUES = [
   uniBar,
   halfwayHotel,
   barCabron,
-  // grandHotel, // TODO: handle via separate Moshtix integration
+  // grandHotel,
 ];
-
 
 function findVenueById(venueId) {
   return ALL_VENUES.find((v) => v.VENUE_ID === venueId);
@@ -40,14 +41,12 @@ function findVenueById(venueId) {
 
 Actor.main(async () => {
   const input = (await Actor.getInput()) || {};
-
-  // Optional: restrict to some venues by VENUE_ID
-  // input.venueIds = ["The Illawarra", "Humber Bar", ...]
   const { venueIds } = input;
 
-  const venuesToRun = venueIds && venueIds.length
-    ? ALL_VENUES.filter((v) => venueIds.includes(v.VENUE_ID))
-    : ALL_VENUES;
+  const venuesToRun =
+    venueIds && venueIds.length
+      ? ALL_VENUES.filter((v) => venueIds.includes(v.VENUE_ID))
+      : ALL_VENUES;
 
   if (!venuesToRun.length) {
     throw new Error('No venues selected to run.');
@@ -74,7 +73,6 @@ Actor.main(async () => {
 
   const crawler = new CheerioCrawler({
     requestQueue,
-    // You can tune this later if needed
     maxConcurrency: 3,
 
     async requestHandler({ request, $, log }) {
@@ -86,14 +84,14 @@ Actor.main(async () => {
         return;
       }
 
+      // ---------------- LIST PAGE ----------------
       if (!label || label === 'LIST') {
-        // LIST PAGE: get detail URLs from venue.listPage
         if (typeof venue.listPage !== 'function') {
           log.warning(`Venue "${venueId}" missing listPage()`);
           return;
         }
 
-        const next = await venue.listPage($, request) || [];
+        const next = (await venue.listPage($, request)) || [];
 
         for (const item of next) {
           if (!item?.url) continue;
@@ -112,14 +110,15 @@ Actor.main(async () => {
         return;
       }
 
-      // DETAIL PAGE
+      // ---------------- DETAIL PAGE ----------------
       if (label === 'DETAIL') {
         if (typeof venue.detailPage !== 'function') {
           log.warning(`Venue "${venueId}" missing detailPage()`);
           return;
         }
 
-        const detail = await venue.detailPage($, request) || {};
+        const detail = (await venue.detailPage($, request)) || {};
+
         const {
           name = '',
           description = '',
@@ -130,9 +129,7 @@ Actor.main(async () => {
           priceRange = '',
         } = detail;
 
-        // For now, we just push to the default dataset.
-        // Later, this is where you POST to the Cloud Run intake.
-        await Actor.pushData({
+        const payload = {
           venueId,
           source,
           name,
@@ -143,9 +140,37 @@ Actor.main(async () => {
           ticketUrl,
           priceRange,
           scrapedUrl: request.url,
-        });
+        };
 
-        log.info(`DETAIL saved for ${venueId}: ${name || '(no title)'}`);
+        // ---- 1) Send to Cloud Run intake ----
+        try {
+          const res = await fetch(INTAKE_URL, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload),
+          });
+
+          if (!res.ok) {
+            let bodyText = '';
+            try {
+              bodyText = await res.text();
+            } catch (_) {
+              // ignore
+            }
+            log.error(
+              `Intake failed for ${venueId} (${res.status} ${res.statusText}) url=${request.url} body=${bodyText}`,
+            );
+          } else {
+            log.info(`Intake OK for ${venueId}: ${name || '(no title)'}`);
+          }
+        } catch (err) {
+          log.error(`Intake request ERROR for ${venueId} at ${request.url}: ${err?.message}`);
+        }
+
+        // ---- 2) Also push into Apify dataset for debugging ----
+        await Actor.pushData(payload);
       }
     },
   });
