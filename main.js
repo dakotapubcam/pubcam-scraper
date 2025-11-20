@@ -14,7 +14,8 @@ import laLaLas from './venues/laLaLas.js';
 import uniBar from './venues/uniBar.js';
 import halfwayHotel from './venues/halfwayHotel.js';
 import barCabron from './venues/barCabron.js';
-import grandHotel from './venues/grandHotel.js';
+// import grandHotel from './venues/grandHotel.js';
+
 
 // All venue configs in one place
 const ALL_VENUES = [
@@ -29,8 +30,9 @@ const ALL_VENUES = [
   uniBar,
   halfwayHotel,
   barCabron,
-  grandHotel,
+  // grandHotel, // TODO: handle via separate Moshtix integration
 ];
+
 
 function findVenueById(venueId) {
   return ALL_VENUES.find((v) => v.VENUE_ID === venueId);
